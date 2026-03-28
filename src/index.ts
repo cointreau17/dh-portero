@@ -21,14 +21,19 @@ export class DhPortero {
    * el usuario inicie o cierre sesión.
    */
   static setAuthState(isLoggedIn: boolean, user: UserPayload | null = null, token?: string) {
+    console.log('[DhPortero] setAuthState called — isLoggedIn:', isLoggedIn, '| token present:', !!token);
     if (token) {
       localStorage.setItem(this.STORAGE_KEY, token);
+      console.log('[DhPortero] token saved to localStorage');
     } else if (!isLoggedIn) {
       localStorage.removeItem(this.STORAGE_KEY);
+      console.log('[DhPortero] token removed from localStorage');
+    } else {
+      console.warn('[DhPortero] isLoggedIn=true but no token provided — localStorage NOT updated');
     }
 
     const state: AuthState = { isLoggedIn, user };
-    
+
     // Emitir el evento global para todos los MFEs en la misma ventana
     const event = new CustomEvent(this.EVENT_NAME, {
       detail: state,
@@ -36,6 +41,7 @@ export class DhPortero {
       composed: true
     });
     window.dispatchEvent(event);
+    console.log('[DhPortero] event dispatched:', this.EVENT_NAME, state);
   }
 
   /**
@@ -43,7 +49,9 @@ export class DhPortero {
    * Útil para los Remotos (paper) en su carga inicial, o directivas booleanas.
    */
   static isLoggedIn(): boolean {
-    return localStorage.getItem(this.STORAGE_KEY) !== null;
+    const result = localStorage.getItem(this.STORAGE_KEY) !== null;
+    console.log('[DhPortero] isLoggedIn() called — result:', result, '| key in localStorage:', !!localStorage.getItem(this.STORAGE_KEY));
+    return result;
   }
 
   /**
@@ -52,8 +60,10 @@ export class DhPortero {
    * @returns Función para de-suscribirse.
    */
   static onChange(callback: AuthStateCallback): () => void {
+    console.log('[DhPortero] onChange listener registered');
     const handler = (event: Event) => {
       const customEvent = event as CustomEvent<AuthState>;
+      console.log('[DhPortero] onChange event received:', customEvent.detail);
       callback(customEvent.detail);
     };
 
