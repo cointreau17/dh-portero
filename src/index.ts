@@ -1,3 +1,13 @@
+export interface MemberGroup {
+  id: string;
+  name: string;
+  avatar: string;
+}
+
+export interface DhPorteroConfig {
+  baseUrl: string;
+}
+
 export interface UserPayload {
   // Ajusta esto según el payload real de tu JWT o usuario
   id?: string | number;
@@ -14,6 +24,43 @@ export type AuthStateCallback = (state: AuthState) => void;
 export class DhPortero {
   private static readonly EVENT_NAME = 'dh-auth-state-changed';
   private static readonly STORAGE_KEY = 'dh_auth_token';
+  private static config: DhPorteroConfig | null = null;
+
+  /**
+   * Inicializa la configuración global de la librería.
+   * El Shell debe llamar a este método una sola vez al arrancar,
+   * antes de que los remotos intenten hacer peticiones.
+   */
+  static configure(config: DhPorteroConfig): void {
+    this.config = config;
+    console.log('[DhPortero] configured — baseUrl:', config.baseUrl);
+  }
+
+  /**
+   * Obtiene los miembros de un grupo.
+   * Devuelve un array vacío en entornos sin window (SSR).
+   */
+  static async getGroupMembers(groupId: string): Promise<MemberGroup[]> {
+    if (typeof window === 'undefined') {
+      return [];
+    }
+    if (!this.config) {
+      console.warn('[DhPortero] getGroupMembers called before configure()');
+      return [];
+    }
+    const token = this.getToken();
+    const response = await fetch(`${this.config.baseUrl}/group/${groupId}/members`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (response.status === 401) {
+      console.warn('[DhPortero] getGroupMembers — 401 Unauthorized, token missing or expired');
+      return [];
+    }
+    if (!response.ok) {
+      throw new Error(`[DhPortero] getGroupMembers failed: ${response.status}`);
+    }
+    return await response.json() as MemberGroup[];
+  }
 
   /**
    * Actualiza el estado de autenticación y lo emite a todos los listeners.

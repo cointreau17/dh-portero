@@ -26,6 +26,41 @@ module.exports = __toCommonJS(index_exports);
 var DhPortero = class {
   static EVENT_NAME = "dh-auth-state-changed";
   static STORAGE_KEY = "dh_auth_token";
+  static config = null;
+  /**
+   * Inicializa la configuración global de la librería.
+   * El Shell debe llamar a este método una sola vez al arrancar,
+   * antes de que los remotos intenten hacer peticiones.
+   */
+  static configure(config) {
+    this.config = config;
+    console.log("[DhPortero] configured \u2014 baseUrl:", config.baseUrl);
+  }
+  /**
+   * Obtiene los miembros de un grupo.
+   * Devuelve un array vacío en entornos sin window (SSR).
+   */
+  static async getGroupMembers(groupId) {
+    if (typeof window === "undefined") {
+      return [];
+    }
+    if (!this.config) {
+      console.warn("[DhPortero] getGroupMembers called before configure()");
+      return [];
+    }
+    const token = this.getToken();
+    const response = await fetch(`${this.config.baseUrl}/group/${groupId}/members`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : void 0
+    });
+    if (response.status === 401) {
+      console.warn("[DhPortero] getGroupMembers \u2014 401 Unauthorized, token missing or expired");
+      return [];
+    }
+    if (!response.ok) {
+      throw new Error(`[DhPortero] getGroupMembers failed: ${response.status}`);
+    }
+    return await response.json();
+  }
   /**
    * Actualiza el estado de autenticación y lo emite a todos los listeners.
    * El Shell (diario-hilario-web-x1) debe llamar a este método cuando

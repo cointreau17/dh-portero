@@ -1,3 +1,11 @@
+interface MemberGroup {
+    id: string;
+    name: string;
+    avatar: string;
+}
+interface DhPorteroConfig {
+    baseUrl: string;
+}
 interface UserPayload {
     id?: string | number;
     [key: string]: any;
@@ -10,6 +18,18 @@ type AuthStateCallback = (state: AuthState) => void;
 declare class DhPortero {
     private static readonly EVENT_NAME;
     private static readonly STORAGE_KEY;
+    private static config;
+    /**
+     * Inicializa la configuración global de la librería.
+     * El Shell debe llamar a este método una sola vez al arrancar,
+     * antes de que los remotos intenten hacer peticiones.
+     */
+    static configure(config: DhPorteroConfig): void;
+    /**
+     * Obtiene los miembros de un grupo.
+     * Devuelve un array vacío en entornos sin window (SSR).
+     */
+    static getGroupMembers(groupId: string): Promise<MemberGroup[]>;
     /**
      * Actualiza el estado de autenticación y lo emite a todos los listeners.
      * El Shell (diario-hilario-web-x1) debe llamar a este método cuando
@@ -33,4 +53,4 @@ declare class DhPortero {
     static getToken(): string | null;
 }
 
-export { type AuthState, type AuthStateCallback, DhPortero, type UserPayload };
+export { type AuthState, type AuthStateCallback, DhPortero, type DhPorteroConfig, type MemberGroup, type UserPayload };
