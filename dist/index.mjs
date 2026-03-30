@@ -38,6 +38,30 @@ var DhPortero = class {
     return await response.json();
   }
   /**
+   * Obtiene el perfil del usuario autenticado desde la API.
+   * Devuelve null si no hay sesión o si falla la petición.
+   */
+  static async getCurrentUser() {
+    if (typeof window === "undefined") return null;
+    if (!this.config) {
+      console.warn("[DhPortero] getCurrentUser called before configure()");
+      return null;
+    }
+    const token = this.getToken();
+    if (!token) return null;
+    const response = await fetch(`${this.config.baseUrl}/api/myuser`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (response.status === 401) {
+      console.warn("[DhPortero] getCurrentUser \u2014 401 Unauthorized");
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`[DhPortero] getCurrentUser failed: ${response.status}`);
+    }
+    return await response.json();
+  }
+  /**
    * Actualiza el estado de autenticación y lo emite a todos los listeners.
    * El Shell (diario-hilario-web-x1) debe llamar a este método cuando
    * el usuario inicie o cierre sesión.

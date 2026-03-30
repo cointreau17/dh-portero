@@ -4,6 +4,17 @@ export interface MemberGroup {
   avatar: string;
 }
 
+export interface UserProfile {
+  id: number;
+  uuid: string;
+  name: string;
+  email: string;
+  createdAt?: string;
+  updatedAt?: string;
+  image?: string;
+  groups: any[];
+}
+
 export interface DhPorteroConfig {
   baseUrl: string;
 }
@@ -60,6 +71,32 @@ export class DhPortero {
       throw new Error(`[DhPortero] getGroupMembers failed: ${response.status}`);
     }
     return await response.json() as MemberGroup[];
+  }
+
+  /**
+   * Obtiene el perfil del usuario autenticado desde la API.
+   * Devuelve null si no hay sesión o si falla la petición.
+   */
+  static async getCurrentUser(): Promise<UserProfile | null> {
+    if (typeof window === 'undefined') return null;
+    if (!this.config) {
+      console.warn('[DhPortero] getCurrentUser called before configure()');
+      return null;
+    }
+    const token = this.getToken();
+    if (!token) return null;
+
+    const response = await fetch(`${this.config.baseUrl}/api/myuser`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (response.status === 401) {
+      console.warn('[DhPortero] getCurrentUser — 401 Unauthorized');
+      return null;
+    }
+    if (!response.ok) {
+      throw new Error(`[DhPortero] getCurrentUser failed: ${response.status}`);
+    }
+    return await response.json() as UserProfile;
   }
 
   /**

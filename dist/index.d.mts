@@ -3,6 +3,16 @@ interface MemberGroup {
     name: string;
     avatar: string;
 }
+interface UserProfile {
+    id: number;
+    uuid: string;
+    name: string;
+    email: string;
+    createdAt?: string;
+    updatedAt?: string;
+    image?: string;
+    groups: any[];
+}
 interface DhPorteroConfig {
     baseUrl: string;
 }
@@ -31,6 +41,11 @@ declare class DhPortero {
      */
     static getGroupMembers(groupId: string): Promise<MemberGroup[]>;
     /**
+     * Obtiene el perfil del usuario autenticado desde la API.
+     * Devuelve null si no hay sesión o si falla la petición.
+     */
+    static getCurrentUser(): Promise<UserProfile | null>;
+    /**
      * Actualiza el estado de autenticación y lo emite a todos los listeners.
      * El Shell (diario-hilario-web-x1) debe llamar a este método cuando
      * el usuario inicie o cierre sesión.
@@ -53,4 +68,4 @@ declare class DhPortero {
     static getToken(): string | null;
 }
 
-export { type AuthState, type AuthStateCallback, DhPortero, type DhPorteroConfig, type MemberGroup, type UserPayload };
+export { type AuthState, type AuthStateCallback, DhPortero, type DhPorteroConfig, type MemberGroup, type UserPayload, type UserProfile };
