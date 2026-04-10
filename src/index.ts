@@ -32,9 +32,13 @@ export interface AuthState {
 
 export type AuthStateCallback = (state: AuthState) => void;
 
+export type HeaderImageCallback = (url: string | null) => void;
+
 export class DhPortero {
   private static readonly EVENT_NAME = 'dh-auth-state-changed';
+  private static readonly HEADER_IMAGE_EVENT = 'dh-header-image-changed';
   private static readonly STORAGE_KEY = 'dh_auth_token';
+  private static readonly HEADER_IMAGE_KEY = 'dh_header_image';
   private static config: DhPorteroConfig | null = null;
 
   /**
@@ -144,6 +148,7 @@ export class DhPortero {
    * @returns Función para de-suscribirse.
    */
   static onChange(callback: AuthStateCallback): () => void {
+    if (typeof window === 'undefined') return () => {};
     console.log('[DhPortero] onChange listener registered');
     const handler = (event: Event) => {
       const customEvent = event as CustomEvent<AuthState>;
@@ -164,5 +169,52 @@ export class DhPortero {
    */
   static getToken(): string | null {
     return localStorage.getItem(this.STORAGE_KEY);
+  }
+
+  /**
+   * Publica una URL de imagen de cabecera desde un proyecto federado.
+   * El Shell recibirá el cambio mediante onHeaderImageChange().
+   * Pasar null elimina la imagen actual.
+   */
+  static setHeaderImage(url: string | null): void {
+    if (typeof window === 'undefined') return;
+
+    if (url !== null) {
+      localStorage.setItem(this.HEADER_IMAGE_KEY, url);
+    } else {
+      localStorage.removeItem(this.HEADER_IMAGE_KEY);
+    }
+
+    const event = new CustomEvent<{ url: string | null }>(this.HEADER_IMAGE_EVENT, {
+      detail: { url },
+      bubbles: true,
+      composed: true,
+    });
+    window.dispatchEvent(event);
+    console.log('[DhPortero] setHeaderImage dispatched:', url);
+  }
+
+  /**
+   * Suscribirse a los cambios de imagen de cabecera.
+   * El Shell debe llamar a este método para reaccionar en tiempo real.
+   * @returns Función para de-suscribirse.
+   */
+  static onHeaderImageChange(callback: HeaderImageCallback): () => void {
+    if (typeof window === 'undefined') return () => {};
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<{ url: string | null }>;
+      callback(customEvent.detail.url);
+    };
+    window.addEventListener(this.HEADER_IMAGE_EVENT, handler);
+    return () => window.removeEventListener(this.HEADER_IMAGE_EVENT, handler);
+  }
+
+  /**
+   * Lectura síncrona de la última URL de imagen de cabecera almacenada.
+   * Útil para la carga inicial del Shell antes de que llegue ningún evento.
+   */
+  static getHeaderImage(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(this.HEADER_IMAGE_KEY);
   }
 }

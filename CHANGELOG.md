@@ -2,12 +2,27 @@
 
 All notable changes to `@diariohilario/portero` will be documented in this file.
 
+## [1.3.0] - 2026-04-10
+
+### Added
+- `HeaderImageCallback` type alias `(url: string | null) => void`
+- `DhPortero.setHeaderImage(url)` — el proyecto federado publica una URL de imagen de cabecera:
+  - Persiste la URL en `localStorage` bajo la clave `dh_header_image`
+  - Emite el `CustomEvent` `dh-header-image-changed` en `window` para notificar al Shell en tiempo real
+  - Pasar `null` elimina la imagen y emite el evento con `url: null`
+  - Guard SSR: no ejecuta nada en entornos sin `window`
+- `DhPortero.onHeaderImageChange(callback)` — el Shell se suscribe a los cambios de imagen:
+  - Devuelve una función de limpieza para desuscribirse (`() => void`)
+- `DhPortero.getHeaderImage()` — lectura síncrona de la última URL guardada en `localStorage`:
+  - Útil para la carga inicial del Shell antes de que llegue ningún evento
+  - Devuelve `null` en SSR o si no hay imagen almacenada
+
 ## [1.2.1] - 2026-03-30
 
 ### Added
 - `UserProfile` interface (`id`, `uuid`, `name`, `email`, `image`, `groups`, `createdAt`, `updatedAt`)
 - `DhPortero.getCurrentUser()` — obtiene el perfil del usuario autenticado desde `/api/myuser`:
-  - Envía la cabecera `Authorization: Bearer <token>` automáticamente
+  - Envía la cabecera `Authorization: Bearer <t de loken>` automáticamente
   - Devuelve `null` si no hay token, si el servidor responde 401, o en entornos SSR
   - Lanza error para cualquier otro fallo HTTP
 

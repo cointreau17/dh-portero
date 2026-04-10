@@ -25,9 +25,12 @@ interface AuthState {
     user: UserPayload | null;
 }
 type AuthStateCallback = (state: AuthState) => void;
+type HeaderImageCallback = (url: string | null) => void;
 declare class DhPortero {
     private static readonly EVENT_NAME;
+    private static readonly HEADER_IMAGE_EVENT;
     private static readonly STORAGE_KEY;
+    private static readonly HEADER_IMAGE_KEY;
     private static config;
     /**
      * Inicializa la configuración global de la librería.
@@ -66,6 +69,23 @@ declare class DhPortero {
      * Obtiene el token guardado, útil para interceptores HTTP.
      */
     static getToken(): string | null;
+    /**
+     * Publica una URL de imagen de cabecera desde un proyecto federado.
+     * El Shell recibirá el cambio mediante onHeaderImageChange().
+     * Pasar null elimina la imagen actual.
+     */
+    static setHeaderImage(url: string | null): void;
+    /**
+     * Suscribirse a los cambios de imagen de cabecera.
+     * El Shell debe llamar a este método para reaccionar en tiempo real.
+     * @returns Función para de-suscribirse.
+     */
+    static onHeaderImageChange(callback: HeaderImageCallback): () => void;
+    /**
+     * Lectura síncrona de la última URL de imagen de cabecera almacenada.
+     * Útil para la carga inicial del Shell antes de que llegue ningún evento.
+     */
+    static getHeaderImage(): string | null;
 }
 
-export { type AuthState, type AuthStateCallback, DhPortero, type DhPorteroConfig, type MemberGroup, type UserPayload, type UserProfile };
+export { type AuthState, type AuthStateCallback, DhPortero, type DhPorteroConfig, type HeaderImageCallback, type MemberGroup, type UserPayload, type UserProfile };

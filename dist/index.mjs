@@ -1,7 +1,9 @@
 // src/index.ts
 var DhPortero = class {
   static EVENT_NAME = "dh-auth-state-changed";
+  static HEADER_IMAGE_EVENT = "dh-header-image-changed";
   static STORAGE_KEY = "dh_auth_token";
+  static HEADER_IMAGE_KEY = "dh_header_image";
   static config = null;
   /**
    * Inicializa la configuración global de la librería.
@@ -101,6 +103,8 @@ var DhPortero = class {
    * @returns Función para de-suscribirse.
    */
   static onChange(callback) {
+    if (typeof window === "undefined") return () => {
+    };
     console.log("[DhPortero] onChange listener registered");
     const handler = (event) => {
       const customEvent = event;
@@ -117,6 +121,49 @@ var DhPortero = class {
    */
   static getToken() {
     return localStorage.getItem(this.STORAGE_KEY);
+  }
+  /**
+   * Publica una URL de imagen de cabecera desde un proyecto federado.
+   * El Shell recibirá el cambio mediante onHeaderImageChange().
+   * Pasar null elimina la imagen actual.
+   */
+  static setHeaderImage(url) {
+    if (typeof window === "undefined") return;
+    if (url !== null) {
+      localStorage.setItem(this.HEADER_IMAGE_KEY, url);
+    } else {
+      localStorage.removeItem(this.HEADER_IMAGE_KEY);
+    }
+    const event = new CustomEvent(this.HEADER_IMAGE_EVENT, {
+      detail: { url },
+      bubbles: true,
+      composed: true
+    });
+    window.dispatchEvent(event);
+    console.log("[DhPortero] setHeaderImage dispatched:", url);
+  }
+  /**
+   * Suscribirse a los cambios de imagen de cabecera.
+   * El Shell debe llamar a este método para reaccionar en tiempo real.
+   * @returns Función para de-suscribirse.
+   */
+  static onHeaderImageChange(callback) {
+    if (typeof window === "undefined") return () => {
+    };
+    const handler = (event) => {
+      const customEvent = event;
+      callback(customEvent.detail.url);
+    };
+    window.addEventListener(this.HEADER_IMAGE_EVENT, handler);
+    return () => window.removeEventListener(this.HEADER_IMAGE_EVENT, handler);
+  }
+  /**
+   * Lectura síncrona de la última URL de imagen de cabecera almacenada.
+   * Útil para la carga inicial del Shell antes de que llegue ningún evento.
+   */
+  static getHeaderImage() {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(this.HEADER_IMAGE_KEY);
   }
 };
 export {

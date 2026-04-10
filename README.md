@@ -6,10 +6,11 @@ Esta librería sirve para compartir y sincronizar el estado de la autenticación
 
 ## Arquitectura
 
-`dh-portero` usa los recursos nativos del navegador (`localStorage` y `CustomEvent` en `window`) para compartir la sesión de manera segura a nivel cliente.
+`dh-portero` usa los recursos nativos del navegador (`localStorage` y `CustomEvent` en `window`) para compartir estado de manera segura a nivel cliente.
 Dado que se ejecuta en el modelo de Micro Frontends (vía Native Federation), tanto el Shell como los Remotos comparten la misma instancia y contexto visual del navegador. Por lo tanto:
 - Los tokens guardados por el Shell en `localStorage` por `dh-portero` (`dh_auth_token`) estarán disponibles instantáneamente para su lectura en los Remotos.
 - Los eventos o `CustomEvent` sobre cambios de login/logout que el Shell emita con `dh-portero`, serán escuchados y procesados de inmediato por los Remotos.
+- Las URLs de imagen publicadas por un Remoto via `dh-portero` (`dh_header_image`) serán recibidas por el Shell en tiempo real.
 
 ## Integración en el Shell (`diario-hilario-web-x1`)
 
@@ -86,3 +87,65 @@ const unsubscribe = DhPortero.onChange((estado) => {
 // ¡Recuerda desuscribirte cuando sea necesario desmantelar el componente!
 // unsubscribe();
 ```
+
+## Imagen de cabecera dinámica
+
+Los proyectos federados pueden publicar una URL de imagen hacia el Shell en tiempo real. El Shell la recibe mediante un `CustomEvent` y puede mostrarla en cualquier componente (cabecera, hero, portada, etc.).
+
+### Desde el Remoto — publicar la URL
+
+Llama a `setHeaderImage` cada vez que la imagen deba cambiar, por ejemplo al entrar en una pantalla de detalle:
+
+```typescript
+import { DhPortero } from '@diariohilario/portero';
+
+// Publicar una imagen (p. ej. portada de una película)
+DhPortero.setHeaderImage(
+  'https://image.tmdb.org/t/p/original/tmU7GeKVybMWFButWEGl2M4GeiP.jpg'
+);
+
+// Limpiar la imagen al salir del detalle
+DhPortero.setHeaderImage(null);
+```
+
+La URL se persiste automáticamente en `localStorage` (`dh_header_image`), por lo que si el usuario recarga la página el Shell podrá recuperarla sin que el Remoto deba volver a emitirla.
+
+### Desde el Shell (Angular) — recibir y mostrar la imagen
+
+Combina `getHeaderImage()` para la carga inicial con `onHeaderImageChange()` para actualizaciones en tiempo real:
+
+```typescript
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { DhPortero } from '@diariohilario/portero';
+
+@Component({
+  selector: 'app-header',
+  template: `<img *ngIf="headerImageUrl" [src]="headerImageUrl" alt="Cabecera" />`,
+})
+export class HeaderComponent implements OnInit, OnDestroy {
+  headerImageUrl: string | null = null;
+  private unsubscribe!: () => void;
+
+  ngOnInit() {
+    // Valor persistido de sesiones anteriores o recargas
+    this.headerImageUrl = DhPortero.getHeaderImage();
+
+    // Escuchar cambios en tiempo real desde cualquier Remoto
+    this.unsubscribe = DhPortero.onHeaderImageChange((url) => {
+      this.headerImageUrl = url;
+    });
+  }
+
+  ngOnDestroy() {
+    this.unsubscribe();
+  }
+}
+```
+
+### Resumen de métodos
+
+| Método | Quién lo llama | Descripción |
+|---|---|---|
+| `setHeaderImage(url)` | Remoto | Publica la URL (`string` o `null`) y la persiste en `localStorage` |
+| `onHeaderImageChange(callback)` | Shell | Suscribe al evento; devuelve función de limpieza |
+| `getHeaderImage()` | Shell (`ngOnInit`) | Lectura síncrona del último valor guardado |
