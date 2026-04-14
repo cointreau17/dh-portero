@@ -2,6 +2,20 @@
 
 All notable changes to `@diariohilario/portero` will be documented in this file.
 
+## [1.4.0] - 2026-04-14
+
+### Changed
+- `DhPortero.setHeaderImage(url, height?)` — nuevo parámetro opcional `height: number | null`:
+  - Persiste el alto en `localStorage` bajo la clave `dh_header_image_height`
+  - Pasar `null` (o omitir) elimina el alto almacenado
+  - El `CustomEvent` `dh-header-image-changed` incluye ahora `{ url, height }` en el `detail`
+- `HeaderImageCallback` — actualizado a `(url: string | null, height: number | null) => void`
+- `DhPortero.onHeaderImageChange(callback)` — el callback recibe ahora el segundo argumento `height`
+
+### Added
+- `DhPortero.getHeaderImageHeight()` — lectura síncrona del alto guardado en `localStorage`:
+  - Devuelve `number | null` (`null` si no se ha establecido o en SSR)
+
 ## [1.3.0] - 2026-04-10
 
 ### Added

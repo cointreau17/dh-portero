@@ -4,6 +4,7 @@ var DhPortero = class {
   static HEADER_IMAGE_EVENT = "dh-header-image-changed";
   static STORAGE_KEY = "dh_auth_token";
   static HEADER_IMAGE_KEY = "dh_header_image";
+  static HEADER_IMAGE_HEIGHT_KEY = "dh_header_image_height";
   static config = null;
   /**
    * Inicializa la configuración global de la librería.
@@ -126,21 +127,27 @@ var DhPortero = class {
    * Publica una URL de imagen de cabecera desde un proyecto federado.
    * El Shell recibirá el cambio mediante onHeaderImageChange().
    * Pasar null elimina la imagen actual.
+   * @param height Alto en píxeles de la imagen. Pasar null elimina el alto almacenado.
    */
-  static setHeaderImage(url) {
+  static setHeaderImage(url, height = null) {
     if (typeof window === "undefined") return;
     if (url !== null) {
       localStorage.setItem(this.HEADER_IMAGE_KEY, url);
     } else {
       localStorage.removeItem(this.HEADER_IMAGE_KEY);
     }
+    if (height !== null) {
+      localStorage.setItem(this.HEADER_IMAGE_HEIGHT_KEY, String(height));
+    } else {
+      localStorage.removeItem(this.HEADER_IMAGE_HEIGHT_KEY);
+    }
     const event = new CustomEvent(this.HEADER_IMAGE_EVENT, {
-      detail: { url },
+      detail: { url, height },
       bubbles: true,
       composed: true
     });
     window.dispatchEvent(event);
-    console.log("[DhPortero] setHeaderImage dispatched:", url);
+    console.log("[DhPortero] setHeaderImage dispatched:", url, "| height:", height);
   }
   /**
    * Suscribirse a los cambios de imagen de cabecera.
@@ -152,7 +159,7 @@ var DhPortero = class {
     };
     const handler = (event) => {
       const customEvent = event;
-      callback(customEvent.detail.url);
+      callback(customEvent.detail.url, customEvent.detail.height);
     };
     window.addEventListener(this.HEADER_IMAGE_EVENT, handler);
     return () => window.removeEventListener(this.HEADER_IMAGE_EVENT, handler);
@@ -164,6 +171,15 @@ var DhPortero = class {
   static getHeaderImage() {
     if (typeof window === "undefined") return null;
     return localStorage.getItem(this.HEADER_IMAGE_KEY);
+  }
+  /**
+   * Lectura síncrona del alto de imagen de cabecera almacenado.
+   * Devuelve null si no se ha establecido ningún alto.
+   */
+  static getHeaderImageHeight() {
+    if (typeof window === "undefined") return null;
+    const raw = localStorage.getItem(this.HEADER_IMAGE_HEIGHT_KEY);
+    return raw !== null ? Number(raw) : null;
   }
 };
 export {

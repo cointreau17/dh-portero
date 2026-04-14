@@ -25,12 +25,13 @@ interface AuthState {
     user: UserPayload | null;
 }
 type AuthStateCallback = (state: AuthState) => void;
-type HeaderImageCallback = (url: string | null) => void;
+type HeaderImageCallback = (url: string | null, height: number | null) => void;
 declare class DhPortero {
     private static readonly EVENT_NAME;
     private static readonly HEADER_IMAGE_EVENT;
     private static readonly STORAGE_KEY;
     private static readonly HEADER_IMAGE_KEY;
+    private static readonly HEADER_IMAGE_HEIGHT_KEY;
     private static config;
     /**
      * Inicializa la configuración global de la librería.
@@ -73,8 +74,9 @@ declare class DhPortero {
      * Publica una URL de imagen de cabecera desde un proyecto federado.
      * El Shell recibirá el cambio mediante onHeaderImageChange().
      * Pasar null elimina la imagen actual.
+     * @param height Alto en píxeles de la imagen. Pasar null elimina el alto almacenado.
      */
-    static setHeaderImage(url: string | null): void;
+    static setHeaderImage(url: string | null, height?: number | null): void;
     /**
      * Suscribirse a los cambios de imagen de cabecera.
      * El Shell debe llamar a este método para reaccionar en tiempo real.
@@ -86,6 +88,11 @@ declare class DhPortero {
      * Útil para la carga inicial del Shell antes de que llegue ningún evento.
      */
     static getHeaderImage(): string | null;
+    /**
+     * Lectura síncrona del alto de imagen de cabecera almacenado.
+     * Devuelve null si no se ha establecido ningún alto.
+     */
+    static getHeaderImageHeight(): number | null;
 }
 
 export { type AuthState, type AuthStateCallback, DhPortero, type DhPorteroConfig, type HeaderImageCallback, type MemberGroup, type UserPayload, type UserProfile };

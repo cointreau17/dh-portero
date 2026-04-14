@@ -32,13 +32,14 @@ export interface AuthState {
 
 export type AuthStateCallback = (state: AuthState) => void;
 
-export type HeaderImageCallback = (url: string | null) => void;
+export type HeaderImageCallback = (url: string | null, height: number | null) => void;
 
 export class DhPortero {
   private static readonly EVENT_NAME = 'dh-auth-state-changed';
   private static readonly HEADER_IMAGE_EVENT = 'dh-header-image-changed';
   private static readonly STORAGE_KEY = 'dh_auth_token';
   private static readonly HEADER_IMAGE_KEY = 'dh_header_image';
+  private static readonly HEADER_IMAGE_HEIGHT_KEY = 'dh_header_image_height';
   private static config: DhPorteroConfig | null = null;
 
   /**
@@ -175,8 +176,9 @@ export class DhPortero {
    * Publica una URL de imagen de cabecera desde un proyecto federado.
    * El Shell recibirá el cambio mediante onHeaderImageChange().
    * Pasar null elimina la imagen actual.
+   * @param height Alto en píxeles de la imagen. Pasar null elimina el alto almacenado.
    */
-  static setHeaderImage(url: string | null): void {
+  static setHeaderImage(url: string | null, height: number | null = null): void {
     if (typeof window === 'undefined') return;
 
     if (url !== null) {
@@ -185,13 +187,19 @@ export class DhPortero {
       localStorage.removeItem(this.HEADER_IMAGE_KEY);
     }
 
-    const event = new CustomEvent<{ url: string | null }>(this.HEADER_IMAGE_EVENT, {
-      detail: { url },
+    if (height !== null) {
+      localStorage.setItem(this.HEADER_IMAGE_HEIGHT_KEY, String(height));
+    } else {
+      localStorage.removeItem(this.HEADER_IMAGE_HEIGHT_KEY);
+    }
+
+    const event = new CustomEvent<{ url: string | null; height: number | null }>(this.HEADER_IMAGE_EVENT, {
+      detail: { url, height },
       bubbles: true,
       composed: true,
     });
     window.dispatchEvent(event);
-    console.log('[DhPortero] setHeaderImage dispatched:', url);
+    console.log('[DhPortero] setHeaderImage dispatched:', url, '| height:', height);
   }
 
   /**
@@ -202,8 +210,8 @@ export class DhPortero {
   static onHeaderImageChange(callback: HeaderImageCallback): () => void {
     if (typeof window === 'undefined') return () => {};
     const handler = (event: Event) => {
-      const customEvent = event as CustomEvent<{ url: string | null }>;
-      callback(customEvent.detail.url);
+      const customEvent = event as CustomEvent<{ url: string | null; height: number | null }>;
+      callback(customEvent.detail.url, customEvent.detail.height);
     };
     window.addEventListener(this.HEADER_IMAGE_EVENT, handler);
     return () => window.removeEventListener(this.HEADER_IMAGE_EVENT, handler);
@@ -216,5 +224,15 @@ export class DhPortero {
   static getHeaderImage(): string | null {
     if (typeof window === 'undefined') return null;
     return localStorage.getItem(this.HEADER_IMAGE_KEY);
+  }
+
+  /**
+   * Lectura síncrona del alto de imagen de cabecera almacenado.
+   * Devuelve null si no se ha establecido ningún alto.
+   */
+  static getHeaderImageHeight(): number | null {
+    if (typeof window === 'undefined') return null;
+    const raw = localStorage.getItem(this.HEADER_IMAGE_HEIGHT_KEY);
+    return raw !== null ? Number(raw) : null;
   }
 }
