@@ -2,18 +2,89 @@
 var DhPortero = class {
   static EVENT_NAME = "dh-auth-state-changed";
   static HEADER_IMAGE_EVENT = "dh-header-image-changed";
-  static STORAGE_KEY = "dh_auth_token";
   static HEADER_IMAGE_KEY = "dh_header_image";
   static HEADER_IMAGE_HEIGHT_KEY = "dh_header_image_height";
-  static config = null;
   /**
-   * Inicializa la configuración global de la librería.
-   * El Shell debe llamar a este método una sola vez al arrancar,
-   * antes de que los remotos intenten hacer peticiones.
+   * Clave heredada de v1.x, cuando el token se persistía en localStorage.
+   * Ya no se escribe; solo se borra (ver `purgeLegacyToken`).
+   */
+  static LEGACY_STORAGE_KEY = "dh_auth_token";
+  static DEFAULT_SESSION_COOKIE = "access_token";
+  static config = { baseUrl: "" };
+  /**
+   * Copia EN MEMORIA del token. Muere con la pestaña: no es un almacén
+   * persistente, solo evita releer la cookie en cada llamada y permite que
+   * `getToken()` siga siendo síncrono para los consumidores que lo necesitan
+   * (XHR de subida de imágenes en paper).
+   */
+  static token = null;
+  /**
+   * Inicializa la configuración global de la librería. Admite llamadas
+   * parciales y sucesivas: el Shell fija `baseUrl` al arrancar y añade
+   * `getToken` más tarde, cuando Auth0 ya está disponible.
    */
   static configure(config) {
-    this.config = config;
-    console.log("[DhPortero] configured \u2014 baseUrl:", config.baseUrl);
+    this.config = { ...this.config, ...config };
+    this.purgeLegacyToken();
+  }
+  /**
+   * Borra el token que v1.x dejaba en localStorage.
+   *
+   * localStorage no caduca, así que una sesión vieja podía dejar ahí un JWT
+   * muerto para siempre y `isLoggedIn()` seguía diciendo `true`. Se limpia al
+   * configurar para que nadie arrastre ese estado al actualizar.
+   */
+  /**
+   * TODO: Borrar en el futuro ya que no estará el token antiguo
+   * dentro de unos meses en los ordenadores de la gente
+   * */
+  static purgeLegacyToken() {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.removeItem(this.LEGACY_STORAGE_KEY);
+    } catch {
+    }
+  }
+  /**
+   * Lee la cookie de sesión que escribe el Shell.
+   *
+   * Es la única copia persistente del token y la comparte con el SSR, que la
+   * recibe en la cabecera `Cookie`. Al llevar `expires` = `exp` del JWT, el
+   * navegador la borra sola al caducar: su mera presencia ya significa
+   * "sesión viva", sin necesidad de decodificar nada.
+   */
+  static readSessionCookie() {
+    if (typeof document === "undefined") return null;
+    const name = this.config.sessionCookieName ?? this.DEFAULT_SESSION_COOKIE;
+    const prefix = `${name}=`;
+    for (const part of document.cookie.split(";")) {
+      const cookie = part.trim();
+      if (!cookie.startsWith(prefix)) continue;
+      const value = cookie.slice(prefix.length);
+      return value.length > 0 ? value : null;
+    }
+    return null;
+  }
+  /**
+   * Token fresco para las llamadas asíncronas.
+   *
+   * Prefiere el proveedor del Shell (que renueva contra Auth0) y cae a la
+   * cookie si no está configurado —por ejemplo si un remoto se carga antes de
+   * que el Shell termine de inicializarse—.
+   */
+  static async resolveToken() {
+    if (this.config.getToken) {
+      try {
+        const fresh = await this.config.getToken();
+        if (fresh) {
+          this.token = fresh;
+          return fresh;
+        }
+      } catch (error) {
+        console.warn("[DhPortero] getToken() del Shell fall\xF3, se usa la cookie", error);
+      }
+    }
+    return this.getToken();
   }
   /**
    * Obtiene los miembros de un grupo.
@@ -23,11 +94,11 @@ var DhPortero = class {
     if (typeof window === "undefined") {
       return [];
     }
-    if (!this.config) {
+    if (!this.config.baseUrl) {
       console.warn("[DhPortero] getGroupMembers called before configure()");
       return [];
     }
-    const token = this.getToken();
+    const token = await this.resolveToken();
     const response = await fetch(`${this.config.baseUrl}/group/${groupId}/members`, {
       headers: token ? { Authorization: `Bearer ${token}` } : void 0
     });
@@ -46,11 +117,11 @@ var DhPortero = class {
    */
   static async getCurrentUser() {
     if (typeof window === "undefined") return null;
-    if (!this.config) {
+    if (!this.config.baseUrl) {
       console.warn("[DhPortero] getCurrentUser called before configure()");
       return null;
     }
-    const token = this.getToken();
+    const token = await this.resolveToken();
     if (!token) return null;
     const response = await fetch(`${this.config.baseUrl}/api/myuser`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -66,20 +137,16 @@ var DhPortero = class {
   }
   /**
    * Actualiza el estado de autenticación y lo emite a todos los listeners.
-   * El Shell (diario-hilario-web-x1) debe llamar a este método cuando
-   * el usuario inicie o cierre sesión.
+   * El Shell (diario-hilario-web-x1) debe llamar a este método cuando el
+   * usuario inicie o cierre sesión, y cada vez que renueve el token.
+   *
+   * A partir de v2 el token NO se persiste aquí: quien manda es la cookie de
+   * sesión, que escribe el Shell y comparte con el SSR. Lo que se pasa en
+   * `token` alimenta solo la copia en memoria.
    */
   static setAuthState(isLoggedIn, user = null, token) {
-    console.log("[DhPortero] setAuthState called \u2014 isLoggedIn:", isLoggedIn, "| token present:", !!token);
-    if (token) {
-      localStorage.setItem(this.STORAGE_KEY, token);
-      console.log("[DhPortero] token saved to localStorage");
-    } else if (!isLoggedIn) {
-      localStorage.removeItem(this.STORAGE_KEY);
-      console.log("[DhPortero] token removed from localStorage");
-    } else {
-      console.warn("[DhPortero] isLoggedIn=true but no token provided \u2014 localStorage NOT updated");
-    }
+    if (typeof window === "undefined") return;
+    this.token = isLoggedIn ? token ?? this.token : null;
     const state = { isLoggedIn, user };
     const event = new CustomEvent(this.EVENT_NAME, {
       detail: state,
@@ -87,16 +154,17 @@ var DhPortero = class {
       composed: true
     });
     window.dispatchEvent(event);
-    console.log("[DhPortero] event dispatched:", this.EVENT_NAME, state);
   }
   /**
    * Comprobación síncrona de si el usuario está logueado.
    * Útil para los Remotos (paper) en su carga inicial, o directivas booleanas.
+   *
+   * Mira la cookie de sesión, no memoria: sobrevive a la recarga y caduca
+   * cuando caduca el token. En v1.x miraba localStorage, que no caduca nunca,
+   * y devolvía `true` indefinidamente con una sesión muerta.
    */
   static isLoggedIn() {
-    const result = localStorage.getItem(this.STORAGE_KEY) !== null;
-    console.log("[DhPortero] isLoggedIn() called \u2014 result:", result, "| key in localStorage:", !!localStorage.getItem(this.STORAGE_KEY));
-    return result;
+    return this.readSessionCookie() !== null;
   }
   /**
    * Suscribirse a los cambios en vivo del estado de autenticación.
@@ -106,10 +174,8 @@ var DhPortero = class {
   static onChange(callback) {
     if (typeof window === "undefined") return () => {
     };
-    console.log("[DhPortero] onChange listener registered");
     const handler = (event) => {
       const customEvent = event;
-      console.log("[DhPortero] onChange event received:", customEvent.detail);
       callback(customEvent.detail);
     };
     window.addEventListener(this.EVENT_NAME, handler);
@@ -118,10 +184,26 @@ var DhPortero = class {
     };
   }
   /**
-   * Obtiene el token guardado, útil para interceptores HTTP.
+   * Obtiene el token de forma síncrona, útil para XHR e interceptores que no
+   * pueden esperar a una promesa.
+   *
+   * Sirve la copia en memoria y, si está fría, la ceba desde la cookie. Para
+   * llamadas que puedan esperar es preferible `getTokenAsync()`, que pide al
+   * Shell un token recién renovado.
    */
   static getToken() {
-    return localStorage.getItem(this.STORAGE_KEY);
+    if (this.token) return this.token;
+    const fromCookie = this.readSessionCookie();
+    if (fromCookie) this.token = fromCookie;
+    return this.token;
+  }
+  /**
+   * Token fresco: pide al Shell que lo renueve si hace falta.
+   * Preferible a `getToken()` siempre que el llamante pueda esperar.
+   */
+  static getTokenAsync() {
+    if (typeof window === "undefined") return Promise.resolve(null);
+    return this.resolveToken();
   }
   /**
    * Publica una URL de imagen de cabecera desde un proyecto federado.
@@ -147,7 +229,6 @@ var DhPortero = class {
       composed: true
     });
     window.dispatchEvent(event);
-    console.log("[DhPortero] setHeaderImage dispatched:", url, "| height:", height);
   }
   /**
    * Suscribirse a los cambios de imagen de cabecera.
