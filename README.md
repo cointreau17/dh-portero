@@ -6,9 +6,9 @@ Esta librería sirve para compartir y sincronizar el estado de la autenticación
 
 ## Arquitectura
 
-`dh-portero` usa los recursos nativos del navegador (`localStorage` y `CustomEvent` en `window`) para compartir estado de manera segura a nivel cliente.
+`dh-portero` usa los recursos nativos del navegador (cookies, `localStorage` y `CustomEvent` en `window`) para compartir estado de manera segura a nivel cliente.
 Dado que se ejecuta en el modelo de Micro Frontends (vía Native Federation), tanto el Shell como los Remotos comparten la misma instancia y contexto visual del navegador. Por lo tanto:
-- Los tokens guardados por el Shell en `localStorage` por `dh-portero` (`dh_auth_token`) estarán disponibles instantáneamente para su lectura en los Remotos.
+- El token que el Shell escribe en la cookie de sesión (`access_token`) estará disponible instantáneamente para los Remotos. **Desde v2 el token no se guarda en `localStorage`**: la cookie es la única copia duradera, y a diferencia de `localStorage` caduca junto al token. Ver [Dónde vive el token](#dónde-vive-el-token).
 - Los eventos o `CustomEvent` sobre cambios de login/logout que el Shell emita con `dh-portero`, serán escuchados y procesados de inmediato por los Remotos.
 - Las URLs de imagen publicadas por un Remoto via `dh-portero` (`dh_header_image`) serán recibidas por el Shell en tiempo real.
 
@@ -23,15 +23,22 @@ Cuando el usuario completa la autenticación principal en el Shell de forma exit
 ```typescript
 import { DhPortero } from 'dh-portero';
 
+// Al arrancar: baseUrl y el proveedor de token. `configure` admite llamadas
+// parciales y sucesivas, así que puedes añadir el proveedor más tarde, cuando
+// tu SDK de autenticación esté listo.
+DhPortero.configure({
+  baseUrl: 'https://api.diariohilario.com',
+  getToken: () => auth.getAccessTokenSilently(),
+});
+
 // ... después de iniciar sesión con Auth0 o tu proveedor:
 const tokenDeAuth0 = "eyJhbG..."; // Tu token o un identificador de sesión
 const datosUsuario = { id: 'user123', name: 'Usuario1' }; // Opcional
 
-// Es MUY IMPORTANTE pasar siempre el token en el inicio de sesión para guardarlo
 DhPortero.setAuthState(true, datosUsuario, tokenDeAuth0);
 ```
 
-> **⚠️ Advertencia sobre el código actual:** Si llamas a `DhPortero.setAuthState(true, userData)` pero omites el parámetro `token`, `dh-portero` NO guardará la huella en `localStorage` (como está programado actualmente en `src/index.ts`). Como consecuencia, si un remoto de otra ruta comprueba la autenticación con `DhPortero.isLoggedIn()`, recibirá `false` asumiendo que el usuario está desconectado al no haber traza de un token guardado. Asegúrate de pasar el identificador.
+> **⚠️ El Shell es responsable de la cookie.** `setAuthState` ya no persiste el token: solo actualiza la copia en memoria y avisa a los Remotos. Quien tiene que escribir —y **mantener fresca**— la cookie `access_token` es el Shell, en cada renovación y no solo al iniciar sesión. Si el Shell deja de refrescarla, la cookie caduca con el token y los Remotos verán al usuario como anónimo aunque su sesión siga viva. En `diario-hilario-web-x1` eso lo hace `TokenSyncService`.
 
 ### 2. Cerrar sesión en el Shell
 
@@ -40,10 +47,22 @@ Cuando el usuario cierra su sesión en el proceso del Shell:
 ```typescript
 import { DhPortero } from 'dh-portero';
 
-// Eliminará automáticamente las claves en el localStorage y emitirá
-// el evento a los Remotos de que la sesión finalizó.
+// Limpia la copia en memoria y emite el evento a los Remotos de que la
+// sesión finalizó. Borrar la cookie `access_token` le corresponde al Shell.
 DhPortero.setAuthState(false);
 ```
+
+## Dónde vive el token
+
+| Sitio | Qué es | Caduca |
+|---|---|---|
+| Cookie `access_token` | Única copia duradera. La escribe el Shell y la comparte con el SSR, que la recibe en la cabecera `Cookie`. | Sí, con el token |
+| Memoria del proceso | Copia efímera para que `getToken()` pueda ser síncrono (XHR, interceptores). Se ceba desde la cookie si está fría. | Con la pestaña |
+| ~~`localStorage`~~ | Así era en v1.x. Se retiró porque **no caduca nunca**: una sesión muerta dejaba ahí un JWT para siempre e `isLoggedIn()` seguía diciendo `true`. | — |
+
+`configure()` borra la clave heredada `dh_auth_token` al arrancar, para que nadie arrastre ese estado al actualizar desde v1.
+
+Para credenciales prefiere `getTokenAsync()`, que pide al Shell un token recién renovado. Usa `getToken()` solo donde no puedas esperar a una promesa.
 
 ## Integración en Remotos (`paper` u otros MFE)
 

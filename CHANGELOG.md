@@ -2,6 +2,26 @@
 
 All notable changes to `@diariohilario/portero` will be documented in this file.
 
+## [2.0.0] - 2026-09-19
+
+### Changed — BREAKING
+- El token **ya no se persiste en `localStorage`**. La copia duradera es la cookie de sesión que escribe el Shell (`access_token`), la misma que recibe el SSR en la cabecera `Cookie`.
+  - `localStorage` no caduca: una sesión muerta dejaba ahí un JWT para siempre e `isLoggedIn()` seguía devolviendo `true` indefinidamente.
+  - Al llamar a `configure()` se borra la clave heredada `dh_auth_token`, para que nadie arrastre ese estado al actualizar.
+- `DhPortero.isLoggedIn()` — pasa a leer la cookie de sesión en vez de `localStorage`. Sigue siendo síncrono, pero ahora **caduca con el token**.
+- `DhPortero.setAuthState(isLoggedIn, user?, token?)` — mantiene la firma, pero `token` ya no se persiste: alimenta solo la copia en memoria. El Shell debe llamarlo también en cada renovación.
+- `DhPortero.getToken()` — mantiene la firma síncrona (`string | null`). Sirve la copia en memoria y, si está fría, la ceba desde la cookie. **Los consumidores no necesitan cambios.**
+
+### Added
+- `DhPorteroConfig.getToken?: () => Promise<string | null>` — proveedor de token del Shell. `getCurrentUser()` y `getGroupMembers()` lo usan para trabajar siempre con un token recién renovado en vez de una copia guardada.
+- `DhPorteroConfig.sessionCookieName?: string` — nombre de la cookie de sesión (por defecto `access_token`).
+- `DhPortero.getTokenAsync(): Promise<string | null>` — token fresco vía el proveedor del Shell. Preferible a `getToken()` siempre que el llamante pueda esperar.
+- `configure()` admite llamadas parciales y sucesivas: el Shell fija `baseUrl` al arrancar y añade `getToken` cuando Auth0 ya está disponible.
+
+### Fixed
+- Guardas SSR en `setAuthState()` e `isLoggedIn()`, que tocaban `localStorage` sin comprobar `window` y podían romper el render server-side.
+- Se retiran los `console.log` de cada llamada. `isLoggedIn()` se invoca en rutas de render y ensuciaba la consola en cada pintado.
+
 ## [1.4.0] - 2026-04-14
 
 ### Changed

@@ -37,14 +37,18 @@ Requiere un GitHub PAT con acceso al repo privado (configurado en el Dockerfile 
 
 **Configuración:**
 ```typescript
+// El Shell fija baseUrl al arrancar…
 DhPortero.configure({ baseUrl: 'https://api.diariohilario.local:9443' })
+// …y añade el proveedor de token cuando Auth0 está disponible (TokenSyncService).
+DhPortero.configure({ getToken: () => auth.getAccessTokenSilently() })
 ```
 
 **Auth:**
 ```typescript
-DhPortero.setAuthState(isLoggedIn, user?, token?)  // Publica estado + emite evento
-DhPortero.isLoggedIn()                              // Lectura síncrona desde localStorage
-DhPortero.getToken()                                // Token desde localStorage
+DhPortero.setAuthState(isLoggedIn, user?, token?)  // Publica estado + emite evento (token NO se persiste)
+DhPortero.isLoggedIn()                              // Lectura síncrona desde la cookie de sesión
+DhPortero.getToken()                                // Síncrono: memoria, cebada desde la cookie
+DhPortero.getTokenAsync()                           // Token fresco vía el proveedor del Shell
 DhPortero.onChange(callback)                        // Suscripción — devuelve unsubscribe fn
 ```
 
@@ -61,9 +65,14 @@ DhPortero.getCurrentUser()                          // GET /api/myuser
 DhPortero.getGroupMembers(groupId)                  // GET /group/{groupId}/members
 ```
 
+**Dónde vive el token (v2):**
+- Cookie `access_token` — única copia duradera. La escribe el Shell y la comparte con el SSR. Caduca con el token.
+- Memoria del proceso — copia efímera para que `getToken()` sea síncrono. Muere con la pestaña.
+- **Nunca en `localStorage`.** `dh_auth_token` es la clave heredada de v1 y `configure()` la borra.
+
 **Claves en localStorage:**
-- `dh_auth_token` — token de autenticación
 - `dh_header_image` — URL de imagen de cabecera
+- `dh_header_image_height` — alto de la imagen de cabecera
 
 ## Build y publicación
 
@@ -76,6 +85,7 @@ DhPortero.getGroupMembers(groupId)                  // GET /group/{groupId}/memb
 
 | Versión | Fecha | Cambios |
 |---------|-------|---------|
+| v2.0.0 | 19 sep 2026 | El token sale de `localStorage`; `isLoggedIn()` lee la cookie |
 | v1.3.0 | 10 abr 2026 | Header image management |
 | v1.2.1 | 30 mar 2026 | getCurrentUser + getGroupMembers |
 | v1.1.1 | 28 mar 2026 | Configuración baseUrl |
@@ -83,7 +93,7 @@ DhPortero.getGroupMembers(groupId)                  // GET /group/{groupId}/memb
 
 ## Consideraciones
 
-- Siempre pasar el `token` explícitamente en `setAuthState(true, user, token)` — si se omite, `isLoggedIn()` devolverá `false` tras recargar la página (el token no persiste)
+- `isLoggedIn()` depende de la cookie `access_token`: si el Shell deja de refrescarla, los remotes verán al usuario como anónimo aunque su sesión siga viva. Quien la mantiene es `TokenSyncService` del Shell
 - Los métodos son estáticos (patrón singleton) — una sola instancia por contexto de ventana
 - Seguro para SSR: los accesos a `window`/`localStorage` están protegidos con `typeof window === 'undefined'`
 - Los proyectos consumidores son: `diario-hilario-web-x1` (shell), `paper` y `billboard` (remotes)
