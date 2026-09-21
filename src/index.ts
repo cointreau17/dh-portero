@@ -73,6 +73,14 @@ export class DhPortero {
    */
   private static token: string | null = null;
 
+  private static readonly CHAT_CLIENT_EVENT = 'dh-chat-client-changed';
+
+  /**
+   * Cliente de chat que publica el Shell. Referencia viva, no dato: muere con
+   * la pestaña y no se serializa. Ver `setChatClient()`.
+   */
+  private static chatClient: unknown = null;
+
   /**
    * Inicializa la configuración global de la librería. Admite llamadas
    * parciales y sucesivas: el Shell fija `baseUrl` al arrancar y añade
@@ -218,6 +226,14 @@ export class DhPortero {
 
     this.token = isLoggedIn ? (token ?? this.token) : null;
 
+    // Al cerrar sesión, el cliente de chat que publicó el Shell deja de valer:
+    // está conectado como el usuario que se acaba de ir. Se retira aquí para
+    // que ningún remoto siga usándolo, y se avisa a quien lo estuviera
+    // escuchando.
+    if (!isLoggedIn && this.chatClient !== null) {
+      this.setChatClient(null);
+    }
+
     const state: AuthState = { isLoggedIn, user };
 
     // Emitir el evento global para todos los MFEs en la misma ventana
@@ -285,6 +301,73 @@ export class DhPortero {
   static getTokenAsync(): Promise<string | null> {
     if (typeof window === 'undefined') return Promise.resolve(null);
     return this.resolveToken();
+  }
+
+  /**
+   * Publica el cliente de chat ya conectado para que lo usen los remotos.
+   *
+   * Lo llama el Shell al terminar de conectar, y con `null` al cerrar sesión.
+   *
+   * Existe porque la conexión a Stream NO se puede duplicar: es un websocket
+   * por usuario y pestaña. Si cada remoto pidiera su token y abriera el suyo,
+   * cada mensaje llegaría dos veces —y el Shell muestra un aviso por cada
+   * `message.new`, así que se verían duplicados—. Compartiendo el cliente ya
+   * autenticado, el remoto dispone de la API entera sin abrir nada.
+   *
+   * Es una referencia viva en memoria, no un dato serializable: no se guarda
+   * en ningún almacén ni sobrevive a la recarga, y solo vale dentro de esta
+   * misma ventana. Por eso el tipo es `unknown` y lo concreta quien lo
+   * recoge: así esta librería sigue sin depender de `stream-chat`.
+   */
+  static setChatClient(cliente: unknown): void {
+    if (typeof window === 'undefined') return;
+
+    this.chatClient = cliente ?? null;
+
+    const event = new CustomEvent(this.CHAT_CLIENT_EVENT, {
+      detail: this.chatClient,
+      bubbles: true,
+      composed: true,
+    });
+    window.dispatchEvent(event);
+  }
+
+  /**
+   * Cliente de chat del Shell, o `null` si todavía no ha conectado.
+   *
+   * Lectura síncrona y puntual. Si el remoto puede montarse antes que el
+   * Shell —que es lo normal—, conviene `onChatClient()`, que además avisa
+   * cuando llega.
+   */
+  static getChatClient<T = unknown>(): T | null {
+    return (this.chatClient as T | null) ?? null;
+  }
+
+  /**
+   * Suscribe a la llegada del cliente de chat.
+   *
+   * **Si ya está disponible, el callback se invoca de inmediato**, antes de
+   * devolver la función de baja. Es deliberado: el orden de arranque entre
+   * Shell y remotos no está garantizado, y sin esto un remoto que montara
+   * tarde no recibiría nunca el aviso y se quedaría esperando un evento que
+   * ya pasó.
+   *
+   * @returns Función para de-suscribirse.
+   */
+  static onChatClient<T = unknown>(callback: (cliente: T | null) => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+
+    if (this.chatClient !== null) {
+      callback(this.chatClient as T);
+    }
+
+    const handler = (event: Event) => {
+      callback((event as CustomEvent).detail as T | null);
+    };
+
+    window.addEventListener(this.CHAT_CLIENT_EVENT, handler);
+
+    return () => window.removeEventListener(this.CHAT_CLIENT_EVENT, handler);
   }
 
   /**
