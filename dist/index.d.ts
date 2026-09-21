@@ -100,6 +100,18 @@ declare class DhPortero {
      */
     private static resolveToken;
     /**
+     * La API tiene DOS rutas para los miembros, según cómo se identifique el
+     * grupo: `/group/{uuid}/members` y `/group-by-slug/{slug}/members`.
+     *
+     * Quien llama no siempre sabe cuál tiene a mano —paper trabaja con el uuid
+     * del grupo cargado, y un remote montado bajo `/media/<seccion>/<slug>`
+     * solo tiene el slug de la URL—, así que se elige aquí mirando la forma.
+     *
+     * No es cosmético: pasarle un slug a la ruta del uuid devuelve **500**, no
+     * 404, y el error que llega arriba no dice nada útil.
+     */
+    private static rutaDeMiembros;
+    /**
      * Obtiene los miembros de un grupo.
      * Devuelve un array vacío en entornos sin window (SSR).
      */

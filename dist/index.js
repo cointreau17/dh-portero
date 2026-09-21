@@ -117,6 +117,21 @@ var DhPortero = class {
     return this.getToken();
   }
   /**
+   * La API tiene DOS rutas para los miembros, según cómo se identifique el
+   * grupo: `/group/{uuid}/members` y `/group-by-slug/{slug}/members`.
+   *
+   * Quien llama no siempre sabe cuál tiene a mano —paper trabaja con el uuid
+   * del grupo cargado, y un remote montado bajo `/media/<seccion>/<slug>`
+   * solo tiene el slug de la URL—, así que se elige aquí mirando la forma.
+   *
+   * No es cosmético: pasarle un slug a la ruta del uuid devuelve **500**, no
+   * 404, y el error que llega arriba no dice nada útil.
+   */
+  static rutaDeMiembros(groupId) {
+    const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(groupId);
+    return esUuid ? `/group/${groupId}/members` : `/group-by-slug/${groupId}/members`;
+  }
+  /**
    * Obtiene los miembros de un grupo.
    * Devuelve un array vacío en entornos sin window (SSR).
    */
@@ -129,7 +144,7 @@ var DhPortero = class {
       return [];
     }
     const token = await this.resolveToken();
-    const response = await fetch(`${this.config.baseUrl}/group/${groupId}/members`, {
+    const response = await fetch(`${this.config.baseUrl}${this.rutaDeMiembros(groupId)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : void 0
     });
     if (response.status === 401) {
