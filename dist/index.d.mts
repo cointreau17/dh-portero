@@ -11,6 +11,7 @@ interface UserProfile {
     createdAt?: string;
     updatedAt?: string;
     image?: string;
+    avatar?: string | null;
     groups: any[];
 }
 interface DhPorteroConfig {
@@ -121,6 +122,13 @@ declare class DhPortero {
      * Devuelve null si no hay sesión o si falla la petición.
      */
     static getCurrentUser(): Promise<UserProfile | null>;
+    /**
+     * Guarda el código HilarAvatar del usuario autenticado.
+     *
+     * La identidad la decide la API a partir del token. El remoto solo entrega
+     * el código elegido y nunca recibe ni envía un uuid de usuario.
+     */
+    static updateCurrentUserAvatar(avatar: string): Promise<string>;
     /**
      * Actualiza el estado de autenticación y lo emite a todos los listeners.
      * El Shell (diario-hilario-web-x1) debe llamar a este método cuando el

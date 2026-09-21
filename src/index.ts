@@ -12,6 +12,7 @@ export interface UserProfile {
   createdAt?: string;
   updatedAt?: string;
   image?: string;
+  avatar?: string | null;
   groups: any[];
 }
 
@@ -217,6 +218,7 @@ export class DhPortero {
 
     const response = await fetch(`${this.config.baseUrl}/api/myuser`, {
       headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
     });
     if (response.status === 401) {
       console.warn('[DhPortero] getCurrentUser — 401 Unauthorized');
@@ -226,6 +228,45 @@ export class DhPortero {
       throw new Error(`[DhPortero] getCurrentUser failed: ${response.status}`);
     }
     return await response.json() as UserProfile;
+  }
+
+  /**
+   * Guarda el código HilarAvatar del usuario autenticado.
+   *
+   * La identidad la decide la API a partir del token. El remoto solo entrega
+   * el código elegido y nunca recibe ni envía un uuid de usuario.
+   */
+  static async updateCurrentUserAvatar(avatar: string): Promise<string> {
+    if (typeof window === 'undefined') {
+      throw new Error('[DhPortero] updateCurrentUserAvatar is only available in the browser');
+    }
+    if (!this.config.baseUrl) {
+      throw new Error('[DhPortero] updateCurrentUserAvatar called before configure()');
+    }
+
+    const token = await this.resolveToken();
+    if (!token) {
+      throw new Error('[DhPortero] updateCurrentUserAvatar requires an authenticated user');
+    }
+
+    const response = await fetch(`${this.config.baseUrl}/user/avatar`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ avatar }),
+    });
+
+    if (response.status === 401) {
+      throw new Error('[DhPortero] updateCurrentUserAvatar — 401 Unauthorized');
+    }
+    if (!response.ok) {
+      throw new Error(`[DhPortero] updateCurrentUserAvatar failed: ${response.status}`);
+    }
+
+    const saved = await response.json() as { avatar: string };
+    return saved.avatar;
   }
 
   /**
