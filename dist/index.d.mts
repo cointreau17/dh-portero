@@ -11,6 +11,7 @@ interface UserProfile {
     createdAt?: string;
     updatedAt?: string;
     image?: string;
+    avatar?: string | null;
     groups: any[];
 }
 interface DhPorteroConfig {
@@ -58,6 +59,12 @@ declare class DhPortero {
      * (XHR de subida de imágenes en paper).
      */
     private static token;
+    private static readonly CHAT_CLIENT_EVENT;
+    /**
+     * Cliente de chat que publica el Shell. Referencia viva, no dato: muere con
+     * la pestaña y no se serializa. Ver `setChatClient()`.
+     */
+    private static chatClient;
     /**
      * Inicializa la configuración global de la librería. Admite llamadas
      * parciales y sucesivas: el Shell fija `baseUrl` al arrancar y añade
@@ -94,6 +101,18 @@ declare class DhPortero {
      */
     private static resolveToken;
     /**
+     * La API tiene DOS rutas para los miembros, según cómo se identifique el
+     * grupo: `/group/{uuid}/members` y `/group-by-slug/{slug}/members`.
+     *
+     * Quien llama no siempre sabe cuál tiene a mano —paper trabaja con el uuid
+     * del grupo cargado, y un remote montado bajo `/media/<seccion>/<slug>`
+     * solo tiene el slug de la URL—, así que se elige aquí mirando la forma.
+     *
+     * No es cosmético: pasarle un slug a la ruta del uuid devuelve **500**, no
+     * 404, y el error que llega arriba no dice nada útil.
+     */
+    private static rutaDeMiembros;
+    /**
      * Obtiene los miembros de un grupo.
      * Devuelve un array vacío en entornos sin window (SSR).
      */
@@ -103,6 +122,13 @@ declare class DhPortero {
      * Devuelve null si no hay sesión o si falla la petición.
      */
     static getCurrentUser(): Promise<UserProfile | null>;
+    /**
+     * Guarda el código HilarAvatar del usuario autenticado.
+     *
+     * La identidad la decide la API a partir del token. El remoto solo entrega
+     * el código elegido y nunca recibe ni envía un uuid de usuario.
+     */
+    static updateCurrentUserAvatar(avatar: string): Promise<string>;
     /**
      * Actualiza el estado de autenticación y lo emite a todos los listeners.
      * El Shell (diario-hilario-web-x1) debe llamar a este método cuando el
@@ -142,6 +168,43 @@ declare class DhPortero {
      * Preferible a `getToken()` siempre que el llamante pueda esperar.
      */
     static getTokenAsync(): Promise<string | null>;
+    /**
+     * Publica el cliente de chat ya conectado para que lo usen los remotos.
+     *
+     * Lo llama el Shell al terminar de conectar, y con `null` al cerrar sesión.
+     *
+     * Existe porque la conexión a Stream NO se puede duplicar: es un websocket
+     * por usuario y pestaña. Si cada remoto pidiera su token y abriera el suyo,
+     * cada mensaje llegaría dos veces —y el Shell muestra un aviso por cada
+     * `message.new`, así que se verían duplicados—. Compartiendo el cliente ya
+     * autenticado, el remoto dispone de la API entera sin abrir nada.
+     *
+     * Es una referencia viva en memoria, no un dato serializable: no se guarda
+     * en ningún almacén ni sobrevive a la recarga, y solo vale dentro de esta
+     * misma ventana. Por eso el tipo es `unknown` y lo concreta quien lo
+     * recoge: así esta librería sigue sin depender de `stream-chat`.
+     */
+    static setChatClient(cliente: unknown): void;
+    /**
+     * Cliente de chat del Shell, o `null` si todavía no ha conectado.
+     *
+     * Lectura síncrona y puntual. Si el remoto puede montarse antes que el
+     * Shell —que es lo normal—, conviene `onChatClient()`, que además avisa
+     * cuando llega.
+     */
+    static getChatClient<T = unknown>(): T | null;
+    /**
+     * Suscribe a la llegada del cliente de chat.
+     *
+     * **Si ya está disponible, el callback se invoca de inmediato**, antes de
+     * devolver la función de baja. Es deliberado: el orden de arranque entre
+     * Shell y remotos no está garantizado, y sin esto un remoto que montara
+     * tarde no recibiría nunca el aviso y se quedaría esperando un evento que
+     * ya pasó.
+     *
+     * @returns Función para de-suscribirse.
+     */
+    static onChatClient<T = unknown>(callback: (cliente: T | null) => void): () => void;
     /**
      * Publica una URL de imagen de cabecera desde un proyecto federado.
      * El Shell recibirá el cambio mediante onHeaderImageChange().

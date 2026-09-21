@@ -12,6 +12,7 @@ export interface UserProfile {
   createdAt?: string;
   updatedAt?: string;
   image?: string;
+  avatar?: string | null;
   groups: any[];
 }
 
@@ -72,6 +73,14 @@ export class DhPortero {
    * (XHR de subida de imágenes en paper).
    */
   private static token: string | null = null;
+
+  private static readonly CHAT_CLIENT_EVENT = 'dh-chat-client-changed';
+
+  /**
+   * Cliente de chat que publica el Shell. Referencia viva, no dato: muere con
+   * la pestaña y no se serializa. Ver `setChatClient()`.
+   */
+  private static chatClient: unknown = null;
 
   /**
    * Inicializa la configuración global de la librería. Admite llamadas
@@ -153,6 +162,22 @@ export class DhPortero {
   }
 
   /**
+   * La API tiene DOS rutas para los miembros, según cómo se identifique el
+   * grupo: `/group/{uuid}/members` y `/group-by-slug/{slug}/members`.
+   *
+   * Quien llama no siempre sabe cuál tiene a mano —paper trabaja con el uuid
+   * del grupo cargado, y un remote montado bajo `/media/<seccion>/<slug>`
+   * solo tiene el slug de la URL—, así que se elige aquí mirando la forma.
+   *
+   * No es cosmético: pasarle un slug a la ruta del uuid devuelve **500**, no
+   * 404, y el error que llega arriba no dice nada útil.
+   */
+  private static rutaDeMiembros(groupId: string): string {
+    const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(groupId);
+    return esUuid ? `/group/${groupId}/members` : `/group-by-slug/${groupId}/members`;
+  }
+
+  /**
    * Obtiene los miembros de un grupo.
    * Devuelve un array vacío en entornos sin window (SSR).
    */
@@ -165,7 +190,7 @@ export class DhPortero {
       return [];
     }
     const token = await this.resolveToken();
-    const response = await fetch(`${this.config.baseUrl}/group/${groupId}/members`, {
+    const response = await fetch(`${this.config.baseUrl}${this.rutaDeMiembros(groupId)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
     if (response.status === 401) {
@@ -193,6 +218,7 @@ export class DhPortero {
 
     const response = await fetch(`${this.config.baseUrl}/api/myuser`, {
       headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
     });
     if (response.status === 401) {
       console.warn('[DhPortero] getCurrentUser — 401 Unauthorized');
@@ -202,6 +228,45 @@ export class DhPortero {
       throw new Error(`[DhPortero] getCurrentUser failed: ${response.status}`);
     }
     return await response.json() as UserProfile;
+  }
+
+  /**
+   * Guarda el código HilarAvatar del usuario autenticado.
+   *
+   * La identidad la decide la API a partir del token. El remoto solo entrega
+   * el código elegido y nunca recibe ni envía un uuid de usuario.
+   */
+  static async updateCurrentUserAvatar(avatar: string): Promise<string> {
+    if (typeof window === 'undefined') {
+      throw new Error('[DhPortero] updateCurrentUserAvatar is only available in the browser');
+    }
+    if (!this.config.baseUrl) {
+      throw new Error('[DhPortero] updateCurrentUserAvatar called before configure()');
+    }
+
+    const token = await this.resolveToken();
+    if (!token) {
+      throw new Error('[DhPortero] updateCurrentUserAvatar requires an authenticated user');
+    }
+
+    const response = await fetch(`${this.config.baseUrl}/user/avatar`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ avatar }),
+    });
+
+    if (response.status === 401) {
+      throw new Error('[DhPortero] updateCurrentUserAvatar — 401 Unauthorized');
+    }
+    if (!response.ok) {
+      throw new Error(`[DhPortero] updateCurrentUserAvatar failed: ${response.status}`);
+    }
+
+    const saved = await response.json() as { avatar: string };
+    return saved.avatar;
   }
 
   /**
@@ -217,6 +282,14 @@ export class DhPortero {
     if (typeof window === 'undefined') return;
 
     this.token = isLoggedIn ? (token ?? this.token) : null;
+
+    // Al cerrar sesión, el cliente de chat que publicó el Shell deja de valer:
+    // está conectado como el usuario que se acaba de ir. Se retira aquí para
+    // que ningún remoto siga usándolo, y se avisa a quien lo estuviera
+    // escuchando.
+    if (!isLoggedIn && this.chatClient !== null) {
+      this.setChatClient(null);
+    }
 
     const state: AuthState = { isLoggedIn, user };
 
@@ -285,6 +358,73 @@ export class DhPortero {
   static getTokenAsync(): Promise<string | null> {
     if (typeof window === 'undefined') return Promise.resolve(null);
     return this.resolveToken();
+  }
+
+  /**
+   * Publica el cliente de chat ya conectado para que lo usen los remotos.
+   *
+   * Lo llama el Shell al terminar de conectar, y con `null` al cerrar sesión.
+   *
+   * Existe porque la conexión a Stream NO se puede duplicar: es un websocket
+   * por usuario y pestaña. Si cada remoto pidiera su token y abriera el suyo,
+   * cada mensaje llegaría dos veces —y el Shell muestra un aviso por cada
+   * `message.new`, así que se verían duplicados—. Compartiendo el cliente ya
+   * autenticado, el remoto dispone de la API entera sin abrir nada.
+   *
+   * Es una referencia viva en memoria, no un dato serializable: no se guarda
+   * en ningún almacén ni sobrevive a la recarga, y solo vale dentro de esta
+   * misma ventana. Por eso el tipo es `unknown` y lo concreta quien lo
+   * recoge: así esta librería sigue sin depender de `stream-chat`.
+   */
+  static setChatClient(cliente: unknown): void {
+    if (typeof window === 'undefined') return;
+
+    this.chatClient = cliente ?? null;
+
+    const event = new CustomEvent(this.CHAT_CLIENT_EVENT, {
+      detail: this.chatClient,
+      bubbles: true,
+      composed: true,
+    });
+    window.dispatchEvent(event);
+  }
+
+  /**
+   * Cliente de chat del Shell, o `null` si todavía no ha conectado.
+   *
+   * Lectura síncrona y puntual. Si el remoto puede montarse antes que el
+   * Shell —que es lo normal—, conviene `onChatClient()`, que además avisa
+   * cuando llega.
+   */
+  static getChatClient<T = unknown>(): T | null {
+    return (this.chatClient as T | null) ?? null;
+  }
+
+  /**
+   * Suscribe a la llegada del cliente de chat.
+   *
+   * **Si ya está disponible, el callback se invoca de inmediato**, antes de
+   * devolver la función de baja. Es deliberado: el orden de arranque entre
+   * Shell y remotos no está garantizado, y sin esto un remoto que montara
+   * tarde no recibiría nunca el aviso y se quedaría esperando un evento que
+   * ya pasó.
+   *
+   * @returns Función para de-suscribirse.
+   */
+  static onChatClient<T = unknown>(callback: (cliente: T | null) => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+
+    if (this.chatClient !== null) {
+      callback(this.chatClient as T);
+    }
+
+    const handler = (event: Event) => {
+      callback((event as CustomEvent).detail as T | null);
+    };
+
+    window.addEventListener(this.CHAT_CLIENT_EVENT, handler);
+
+    return () => window.removeEventListener(this.CHAT_CLIENT_EVENT, handler);
   }
 
   /**

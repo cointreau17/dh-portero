@@ -168,3 +168,5 @@ export class HeaderComponent implements OnInit, OnDestroy {
 | `setHeaderImage(url)` | Remoto | Publica la URL (`string` o `null`) y la persiste en `localStorage` |
 | `onHeaderImageChange(callback)` | Shell | Suscribe al evento; devuelve función de limpieza |
 | `getHeaderImage()` | Shell (`ngOnInit`) | Lectura síncrona del último valor guardado |
+| `getCurrentUser()` | Shell o remoto | Lee el perfil autenticado con un token fresco |
+| `updateCurrentUserAvatar(codigo)` | Remoto | Guarda el código HilarAvatar en el perfil autenticado |
